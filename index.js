@@ -1,5 +1,5 @@
-process.env.FFMPEG_PATH = require('ffmpeg-static');
 require('dotenv').config();
+const { spawn } = require('child_process');
 
 const {
   Client,
@@ -19,13 +19,8 @@ const {
   entersState
 } = require('@discordjs/voice');
 
-const youtubedl = require('youtube-dl-exec');
-
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates
-  ]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
 });
 
 const player = createAudioPlayer();
@@ -33,11 +28,11 @@ let currentConnection = null;
 let currentBgmId = null;
 
 const BGM_LIST = {
-  wave:   { label: '🌊 波の音',     url: 'https://www.youtube.com/watch?v=B3UM8TizqYQ' },
-  forest: { label: '🌳 森の清流',   url: 'https://www.youtube.com/watch?v=-11GWcyj_Is' },
-  fire:   { label: '🔥 焚き火',     url: 'https://www.youtube.com/watch?v=iq9jqLtBx9c' },
+  wave:   { label: '🌊 波の音',      url: 'https://www.youtube.com/watch?v=B3UM8TizqYQ' },
+  forest: { label: '🌳 森の清流',    url: 'https://www.youtube.com/watch?v=-11GWcyj_Is' },
+  fire:   { label: '🔥 焚き火',      url: 'https://www.youtube.com/watch?v=iq9jqLtBx9c' },
   cafe:   { label: '☕ あつ森カフェ', url: 'https://www.youtube.com/watch?v=v3oPr2InUfc' },
-  rain:   { label: '🌧 雨の音',     url: 'https://www.youtube.com/watch?v=6NCCDrn0i9g' }
+  rain:   { label: '🌧 雨の音',      url: 'https://www.youtube.com/watch?v=6NCCDrn0i9g' }
 };
 
 function createBgmButtons() {
@@ -63,40 +58,48 @@ function createEmbed() {
     .setFooter({ text: 'VCに入室 → ボタンを押す → BGM再生開始' });
 }
 
-async function playBgm(url) {
-  try {
-    const subprocess = youtubedl.exec(url, {
-      output: '-',
-      quiet: true,
-      noWarnings: true,
-      format: 'bestaudio[ext=webm]/bestaudio/best',
-      noCheckCertificates: true,
-      noWarnings: true,
-      preferFreeFormats: true,
-      addHeader: [
-        'referer:youtube.com',
-        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'
-      ]
+function playBgm(url) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      url,
+      '--output', '-',
+      '--format', 'bestaudio[ext=webm]/bestaudio/best',
+      '--quiet',
+      '--no-warnings',
+      '--no-check-certificates',
+      '--extractor-args', 'youtube:player_client=android',
+      '--add-header', 'User-Agent:Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36'
+    ];
+
+    const ytdlp = spawn('yt-dlp', args);
+
+    ytdlp.stderr.on('data', (data) => {
+      console.error('yt-dlp stderr:', data.toString().trim());
     });
-    const resource = createAudioResource(subprocess.stdout);
+
+    ytdlp.on('error', (err) => {
+      console.error('yt-dlp起動エラー:', err.message);
+      reject(err);
+    });
+
+    const resource = createAudioResource(ytdlp.stdout);
     player.play(resource);
     console.log(`▶ 再生開始: ${url}`);
-  } catch (err) {
-    console.error('再生エラー:', err.message);
-  }
+    resolve();
+  });
 }
 
 player.on(AudioPlayerStatus.Idle, () => {
   if (currentBgmId && BGM_LIST[currentBgmId]) {
-    console.log('再生完了 → 自動ループ');
-    setTimeout(() => playBgm(BGM_LIST[currentBgmId].url), 3000);
+    console.log('再生完了 → 3秒後に自動ループ');
+    setTimeout(() => playBgm(BGM_LIST[currentBgmId].url).catch(console.error), 3000);
   }
 });
 
 player.on('error', (err) => {
   console.error('プレイヤーエラー:', err.message);
   if (currentBgmId && BGM_LIST[currentBgmId]) {
-    setTimeout(() => playBgm(BGM_LIST[currentBgmId].url), 30000);
+    setTimeout(() => playBgm(BGM_LIST[currentBgmId].url).catch(console.error), 30000);
   }
 });
 
@@ -142,8 +145,7 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
-  const member = interaction.member;
-  const voiceChannel = member.voice?.channel;
+  const voiceChannel = interaction.member?.voice?.channel;
 
   if (interaction.customId === 'stop') {
     player.stop();
@@ -171,7 +173,7 @@ client.on('interactionCreate', async (interaction) => {
     await playBgm(bgm.url);
     await interaction.editReply({ content: `🎧 **${bgm.label}** を再生開始しました！` });
   } catch (err) {
-    console.error('エラー:', err);
+    console.error('再生エラー:', err);
     await interaction.editReply({ content: '⚠️ 再生に失敗しました。' });
   }
 });
