@@ -18,7 +18,7 @@ const {
   entersState
 } = require('@discordjs/voice');
 
-const ytdl = require('@distube/ytdl-core');
+const youtubedl = require('youtube-dl-exec');
 
 // ============================================================
 // 設定
@@ -126,14 +126,20 @@ function createEmbed() {
 
 async function playBgm(url) {
   try {
-    const stream = ytdl(url, { filter: 'audioonly', highWaterMark: 1 << 25 });
-    const resource = createAudioResource(stream);
-
+    const subprocess = youtubedl.exec(url, {
+      output: '-',
+      quiet: true,
+      noWarnings: true,
+      format: 'bestaudio[ext=webm]/bestaudio',
+    });
+    const resource = createAudioResource(subprocess.stdout);
     player.play(resource);
-
     console.log(`▶ 再生開始: ${url}`);
   } catch (err) {
     console.error('再生エラー:', err.message);
+    setTimeout(() => playBgm(url), 5000);
+  }
+}
 
     // 5秒後にリトライ
     setTimeout(() => {
