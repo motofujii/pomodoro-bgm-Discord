@@ -18,7 +18,7 @@ const {
   entersState
 } = require('@discordjs/voice');
 
-const play = require('play-dl');
+const ytdl = require('@distube/ytdl-core');
 
 // ============================================================
 // 設定
@@ -126,10 +126,8 @@ function createEmbed() {
 
 async function playBgm(url) {
   try {
-    const stream = await play.stream(url);
-    const resource = createAudioResource(stream.stream, {
-      inputType: stream.type
-    });
+    const stream = ytdl(url, { filter: 'audioonly', highWaterMark: 1 << 25 });
+    const resource = createAudioResource(stream);
 
     player.play(resource);
 
